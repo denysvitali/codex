@@ -337,6 +337,8 @@ impl ModelInstructionsVariables {
             match personality {
                 Personality::Friendly => self.personality_friendly.clone(),
                 Personality::Pragmatic => self.personality_pragmatic.clone(),
+                // When None is explicitly selected, return None so no personality is injected
+                Personality::None => None,
             }
         } else {
             self.personality_default.clone()
