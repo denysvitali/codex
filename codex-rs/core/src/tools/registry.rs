@@ -360,7 +360,27 @@ impl ToolRegistry {
     }
 
     fn tool(&self, name: &ToolName) -> Option<Arc<dyn CoreToolRuntime>> {
-        self.tools.get(name).map(Arc::clone)
+        if let Some(tool) = self.tools.get(name) {
+            return Some(Arc::clone(tool));
+        }
+        // Fallback: when namespace tools are flattened for non-OpenAI
+        // providers, the model sends a flat name (e.g.
+        // "mcp__gh_actions__list_runs") with no namespace field.  Try
+        // registered namespaces as prefixes to resolve the split.
+        if name.namespace.is_none() {
+            let flat = name.name.as_str();
+            for key in self.tools.keys() {
+                if let Some(ns) = &key.namespace {
+                    if let Some(rest) = flat.strip_prefix(ns.as_str()) {
+                        let rest = rest.strip_prefix("__").unwrap_or(rest);
+                        if rest == key.name {
+                            return self.tools.get(key).map(Arc::clone);
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 
     #[cfg(test)]

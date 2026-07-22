@@ -262,6 +262,22 @@ impl ModelProvider for ConfiguredModelProvider {
         &self.info
     }
 
+    fn capabilities(&self) -> ProviderCapabilities {
+        // The `{"type": "namespace"}` tool format is an OpenAI Responses API
+        // extension.  Non-OpenAI endpoints (Ollama, Aliyun MaaS, LiteLLM, …)
+        // silently drop namespace entries, making every MCP tool invisible to
+        // the model.  Disable namespace tools for third-party providers so
+        // the tool planner flattens them into standard function entries.
+        if self.info.is_openai() || self.info.supports_remote_compaction() {
+            ProviderCapabilities::default()
+        } else {
+            ProviderCapabilities {
+                namespace_tools: false,
+                ..ProviderCapabilities::default()
+            }
+        }
+    }
+
     fn auth_manager(&self) -> Option<Arc<AuthManager>> {
         self.auth_manager.clone()
     }

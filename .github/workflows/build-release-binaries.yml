@@ -12,28 +12,19 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
   build:
-    strategy:
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            bin: codex
-          - target: aarch64-unknown-linux-musl
-            os: ubuntu-latest
-            bin: codex
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            bin: codex
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            bin: codex
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: 0
+      CARGO_PROFILE_RELEASE_LTO: "off"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: 16
+      CARGO_PROFILE_RELEASE_DEBUG: 0
+      CARGO_PROFILE_RELEASE_STRIP: "symbols"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -41,34 +32,45 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-unknown-linux-musl
 
-      - name: Install musl tools
-        if: contains(matrix.target, 'musl')
-        run: sudo apt-get install -y musl-tools
+      - name: Install mold + musl-tools
+        run: sudo apt-get install -y mold musl-tools
 
-      - name: Cache cargo
+      - uses: mozilla-actions/sccache-action@v0.0.9
+
+      - uses: ./.github/actions/setup-rusty-v8
+        with:
+          target: x86_64-unknown-linux-musl
+
+      - run: echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >> "$GITHUB_ENV"
+
+      # Full target/ cache: on hit, only workspace crates recompile (~1 min).
+      # Keyed on Cargo.lock so dep changes bust the cache.
+      - name: Cache build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
+            codex-rs/target/x86_64-unknown-linux-musl/release/.fingerprint
+            codex-rs/target/x86_64-unknown-linux-musl/release/build
+            codex-rs/target/x86_64-unknown-linux-musl/release/deps
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            codex-rs/target
-          key: ${{ matrix.target }}-release-${{ hashFiles('codex-rs/Cargo.lock') }}
-          restore-keys: ${{ matrix.target }}-release-
+          key: build-${{ hashFiles('codex-rs/Cargo.lock') }}-${{ hashFiles('codex-rs/**/src/**/*.rs') }}
+          restore-keys: |
+            build-${{ hashFiles('codex-rs/Cargo.lock') }}-
+            build-
 
-      - name: Build release binary
+      - name: Build
         working-directory: codex-rs
-        run: cargo build --release --target ${{ matrix.target }} -p codex-cli
+        run: |
+          cargo build --release --target x86_64-unknown-linux-musl -p codex-cli \
+            --config target.x86_64-unknown-linux-musl.linker='"clang"' \
+            --config target.x86_64-unknown-linux-musl.rustflags='["-C","link-arg=-fuse-ld=mold"]'
 
-      - name: Strip binary
-        working-directory: codex-rs
-        run: strip target/${{ matrix.target }}/release/${{ matrix.bin }} || true
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: codex-${{ matrix.target }}
-          path: codex-rs/target/${{ matrix.target }}/release/${{ matrix.bin }}
+          name: codex-x86_64-unknown-linux-musl
+          path: codex-rs/target/x86_64-unknown-linux-musl/release/codex
           retention-days: 30
