@@ -253,14 +253,40 @@ fn build_model_visible_specs_and_registry(
     specs.extend(hosted_specs);
 
     let registry = ToolRegistry::from_tools(runtimes);
+    let ns_enabled = namespace_tools_enabled(turn_context);
     let model_visible_specs = merge_into_namespaces(specs)
         .into_iter()
-        .filter(|spec| {
-            namespace_tools_enabled(turn_context) || !matches!(spec, ToolSpec::Namespace(_))
-        })
+        .flat_map(|spec| flatten_namespace_if_needed(spec, ns_enabled))
         .collect();
 
     (model_visible_specs, registry)
+}
+
+/// When the provider supports namespace tools (OpenAI), pass them through as
+/// `{"type": "namespace", …}`.  Otherwise flatten each namespace into
+/// individual `{"type": "function", …}` entries so that OpenAI-compatible
+/// endpoints that do not implement the namespace extension still receive
+/// every MCP / extension tool.
+fn flatten_namespace_if_needed(spec: ToolSpec, ns_enabled: bool) -> Vec<ToolSpec> {
+    if ns_enabled {
+        return vec![spec];
+    }
+    match spec {
+        ToolSpec::Namespace(namespace) => namespace
+            .tools
+            .into_iter()
+            .map(|ns_tool| match ns_tool {
+                ResponsesApiNamespaceTool::Function(mut tool) => {
+                    // Prefix the tool name with the namespace so the model
+                    // sees e.g. "mcp__gh_actions__list_runs" and routing
+                    // back to the MCP server still works.
+                    tool.name = format!("{}__{}", namespace.name, tool.name);
+                    ToolSpec::Function(tool)
+                }
+            })
+            .collect(),
+        other => vec![other],
+    }
 }
 
 fn spec_for_model_request(
