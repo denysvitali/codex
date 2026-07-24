@@ -54,6 +54,22 @@ fn base_instruction_override_preserves_catalog_approval_messages() {
 }
 
 #[test]
+fn model_info_from_slug_uses_128k_context_for_gpt_5_3_codex_spark() {
+    let model = model_info_from_slug("gpt-5.3-codex-spark");
+    assert_eq!(model.context_window, Some(128_000));
+    assert_eq!(model.max_context_window, Some(128_000));
+    assert!(model.used_fallback_model_metadata);
+}
+
+#[test]
+fn model_info_from_slug_uses_128k_context_for_gpt_5_3_codex_spark_with_effort_suffix() {
+    let model = model_info_from_slug("gpt-5.3-codex-spark-high");
+    assert_eq!(model.context_window, Some(128_000));
+    assert_eq!(model.max_context_window, Some(128_000));
+    assert!(model.used_fallback_model_metadata);
+}
+
+#[test]
 fn disabled_personality_preserves_catalog_approval_messages() {
     let mut model = model_info_from_slug("unknown-model");
     let approvals = ApprovalMessages {

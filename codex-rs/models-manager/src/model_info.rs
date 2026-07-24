@@ -123,6 +123,12 @@ fn clear_instruction_messages(model: &mut ModelInfo) {
 
 /// Build a minimal fallback model descriptor for missing/unknown slugs.
 pub fn model_info_from_slug(slug: &str) -> ModelInfo {
+    let (context_window, max_context_window) = if slug.starts_with("gpt-5.3-codex-spark") {
+        (128_000, 128_000)
+    } else {
+        (272_000, 272_000)
+    };
+
     warn!("Unknown model {slug} is used. This will use fallback model metadata.");
     ModelInfo {
         slug: slug.to_string(),
@@ -151,8 +157,8 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_parallel_tool_calls: false,
         supports_image_detail_original: false,
-        context_window: Some(272_000),
-        max_context_window: Some(272_000),
+        context_window: Some(context_window),
+        max_context_window: Some(max_context_window),
         auto_compact_token_limit: None,
         comp_hash: None,
         effective_context_window_percent: 95,
